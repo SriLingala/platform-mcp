@@ -1,0 +1,15 @@
+{
+  "_comment_top": "Drop this block into your Claude Desktop config file (path varies by OS — see https://modelcontextprotocol.io/quickstart for the exact path). Use ABSOLUTE paths.",
+  "mcpServers": {
+    "platform-mcp": {
+      "_comment": "If installed via 'pip install -e .' the console script is on PATH and you can just use 'command': 'platform-mcp' with no args.",
+      "command": "/absolute/path/to/.venv/bin/platform-mcp",
+      "args": []
+    },
+    "_alternative_python_script": {
+      "_comment": "If you'd rather run the script directly without installing the package, use this form instead.",
+      "command": "/absolute/path/to/python",
+      "args": ["/absolute/path/to/platform-mcp/server.py"]
+    }
+  }
+}

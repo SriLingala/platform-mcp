@@ -23,7 +23,8 @@ This server is a working starting point for that pattern.
 
 ## What it exposes
 
-Five tools, all read-only:
+Five tools, all read-only. Every call is logged at INFO to stderr with the
+tool name and args, so the audit pitch below has real code behind it.
 
 | Tool                | Purpose                                                      |
 |---------------------|--------------------------------------------------------------|
@@ -33,29 +34,39 @@ Five tools, all read-only:
 | `get_runbook`       | Return runbook steps for a common incident scenario.         |
 | `check_compliance`  | Return the compliance check matrix for a platform component. |
 
+Enum-shaped args (`pattern`, `scenario`, `component`, blueprint `name`) are
+typed with `Literal[...]` so the MCP tool schema advertises the valid values
+to the assistant up front. Unknown inputs raise `ValueError`, which FastMCP
+surfaces to the client as a proper MCP error instead of a string the
+assistant might mistake for data.
+
 ## Run it locally
 
 ```bash
-pip install mcp
-python server.py
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+platform-mcp                # or: python server.py
 ```
 
-The server speaks MCP over stdio. Wire it into Claude Desktop with the
-following config block (path varies by OS):
+The server speaks MCP over stdio. Wire it into Claude Desktop / Claude Code by
+dropping the block from [docs/claude_desktop_config.json](docs/claude_desktop_config.json)
+into your client config (path varies by OS — see the
+[MCP quickstart](https://modelcontextprotocol.io/quickstart)). Use absolute
+paths.
 
-```json
-{
-  "mcpServers": {
-    "platform-mcp": {
-      "command": "python",
-      "args": ["/absolute/path/to/server.py"]
-    }
-  }
-}
+Open the client. Ask "what platform blueprints are available?" The assistant
+will call `list_blueprints` and answer from the returned data.
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+ruff check .
+pytest
 ```
 
-Open Claude Desktop. Ask "what platform blueprints are available?" Claude will
-call `list_blueprints` and answer from the returned data.
+CI runs the same checks against Python 3.10 / 3.11 / 3.12 on every push and
+pull request — see [.github/workflows/ci.yml](.github/workflows/ci.yml).
 
 ## Extending it
 

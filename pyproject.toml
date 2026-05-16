@@ -1,14 +1,39 @@
 [project]
 name = "platform-mcp"
-version = "0.1.0"
-description = "An MCP server that exposes platform engineering knowledge as Claude-callable tools."
+version = "0.2.0"
+description = "An MCP server that exposes platform engineering knowledge as MCP tools."
 authors = [{ name = "Sri Lingala" }]
 license = { text = "MIT" }
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mcp>=1.0",
+    # Pinned to 1.x — the MCP SDK has had breaking changes between majors,
+    # bump intentionally and re-run the smoke tests when crossing the cap.
+    "mcp>=1.0,<2.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+platform-mcp = "server:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["server"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

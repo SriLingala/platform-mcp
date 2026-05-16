@@ -1,45 +1,80 @@
 """
 platform-mcp
 
-An MCP server that exposes platform engineering knowledge as tools Claude can
-call. Demonstrates a working Model Context Protocol implementation built on
-the official MCP Python SDK.
+An MCP server that exposes platform engineering knowledge as tools an MCP
+client (Claude Code, Claude Desktop, Cursor, etc.) can call. Built on the
+official MCP Python SDK via FastMCP.
 
 Tools exposed:
-  - list_blueprints()           returns the four reference platform blueprints
-  - describe_pattern(pattern)   returns the design pattern for a given component
-  - get_runbook(scenario)       returns a runbook for a common incident scenario
-  - check_compliance(component) returns a compliance check matrix for a component
+  - list_blueprints()                  list reference platform blueprints
+  - describe_blueprint(name)           full description of a named blueprint
+  - describe_pattern(pattern)          plain-prose explanation of a design pattern
+  - get_runbook(scenario)              runbook steps for a common incident
+  - check_compliance(component)        compliance check matrix for a component
+
+Every tool call is logged at INFO with the call args, so the audit pitch in
+the README has actual code behind it. Logs go to stderr so they don't pollute
+the stdio JSON-RPC channel.
 
 Run:
-    pip install mcp anthropic
-    python server.py
+    pip install -e .
+    platform-mcp                       # or: python server.py
 
-Or wire into Claude Desktop config:
-    {
-      "mcpServers": {
-        "platform-mcp": {
-          "command": "python",
-          "args": ["/absolute/path/to/server.py"]
-        }
-      }
-    }
+Wire into Claude Desktop / Claude Code with the config block in
+docs/claude_desktop_config.json.
 """
-from __future__ import annotations
-import json
-from typing import Any
+
+import logging
+import sys
+import uuid
+from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
+
+# Log to stderr — stdout is the MCP transport, anything we print there
+# corrupts the JSON-RPC framing.
+logging.basicConfig(
+    stream=sys.stderr,
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s platform-mcp %(message)s",
+)
+log = logging.getLogger("platform-mcp")
 
 mcp = FastMCP("platform-mcp")
 
 
 # ---- Knowledge base --------------------------------------------------------
-# In production you would back this with a real source: Git, Confluence, your
-# CMDB, a Postgres table, a vector store, whatever. For the demo it lives in
-# Python dictionaries.
+# In production this would be backed by a real source (Git, Confluence, a
+# CMDB, Postgres, a vector store). For the demo it lives in plain Python
+# data so the server is one file and runs with no external dependencies.
 
-BLUEPRINTS: dict[str, dict[str, Any]] = {
+BlueprintName = Literal[
+    "idp-banking-blueprint",
+    "aks-platform",
+    "ml-platform-k8s",
+    "gitops-platform-automation",
+    "onprem-k8s-blueprint",
+]
+
+PatternName = Literal[
+    "workload-identity",
+    "policy-as-code",
+    "multi-tenant-namespaces",
+    "gitops-fleet",
+]
+
+RunbookScenario = Literal[
+    "argocd-out-of-sync",
+    "node-pool-pressure",
+]
+
+ComponentName = Literal[
+    "namespace",
+    "image",
+]
+
+
+BLUEPRINTS: dict[str, dict[str, object]] = {
     "idp-banking-blueprint": {
         "summary": "Internal Developer Platform reference for regulated banking on GKE.",
         "stack": ["GKE", "Terraform", "Argo CD", "Sentinel", "OPA", "Workload Identity"],
@@ -49,16 +84,20 @@ BLUEPRINTS: dict[str, dict[str, Any]] = {
     },
     "aks-platform": {
         "summary": "Production-grade AKS blueprint.",
-        "stack": ["AKS", "Terraform", "Helm", "Workload Identity", "Key Vault",
-                  "Prometheus", "cert-manager", "Ingress NGINX", "GitHub Actions"],
+        "stack": [
+            "AKS", "Terraform", "Helm", "Workload Identity", "Key Vault",
+            "Prometheus", "cert-manager", "Ingress NGINX", "GitHub Actions",
+        ],
         "tenants": "shared platform add-ons across namespaces",
         "audit": "GitHub Actions CI logs, Azure Activity Logs",
         "url": "https://github.com/SriLingala/aks-platform",
     },
     "ml-platform-k8s": {
         "summary": "AKS-based MLOps platform with GPU node pools.",
-        "stack": ["AKS", "GPU node pools", "MLflow", "Argo Workflows",
-                  "KServe", "GitOps", "Helm"],
+        "stack": [
+            "AKS", "GPU node pools", "MLflow", "Argo Workflows",
+            "KServe", "GitOps", "Helm",
+        ],
         "tenants": "per-team MLflow experiments and Argo Workflow namespaces",
         "audit": "MLflow tracking server plus Argo Workflows lineage",
         "url": "https://github.com/SriLingala/ml-platform-k8s",
@@ -70,9 +109,16 @@ BLUEPRINTS: dict[str, dict[str, Any]] = {
         "audit": "Argo CD sync history plus Git commit log",
         "url": "https://github.com/SriLingala/gitops-platform-automation",
     },
+    "onprem-k8s-blueprint": {
+        "summary": "On-prem Kubernetes blueprint covering RKE2 and k3s edge clusters.",
+        "stack": ["RKE2", "k3s", "Terraform", "Helm", "MetalLB", "Argo CD", "Loki"],
+        "tenants": "hybrid datacentre + edge fleet",
+        "audit": "Terraform plan history, Argo CD sync log, etcd snapshots",
+        "url": "https://github.com/SriLingala/onprem-k8s-blueprint",
+    },
 }
 
-PATTERNS = {
+PATTERNS: dict[str, str] = {
     "workload-identity": (
         "Workload Identity binds Kubernetes service accounts to cloud IAM "
         "identities so pods can call cloud APIs without long-lived secrets. "
@@ -101,104 +147,136 @@ PATTERNS = {
     ),
 }
 
-RUNBOOKS = {
-    "argocd-out-of-sync": (
-        "1. Confirm the Application is OutOfSync in the Argo CD UI. "
-        "2. Run `argocd app diff <name>` to see the drift. "
-        "3. If the drift is benign (e.g. controller-managed annotations), add "
-        "to the ignoreDifferences block in the Application. "
-        "4. If the drift is real, identify the actor (Cloud Audit Logs / "
-        "Kubernetes audit). Revoke the access if it was unauthorised. "
-        "5. Run `argocd app sync <name>` to restore Git as the source of truth."
-    ),
-    "node-pool-pressure": (
-        "1. Check `kubectl top nodes` for the affected pool. "
-        "2. If CPU/memory pressure, evict pods with low priority and let the "
-        "cluster autoscaler grow the pool. "
-        "3. If disk pressure, identify the noisy neighbour with "
-        "`kubectl describe node` events. Apply a PodDisruptionBudget cap. "
-        "4. For GPU pools specifically, check MIG slicing config. A GPU may be "
-        "fragmented across small workloads that block a larger request."
-    ),
+RUNBOOKS: dict[str, list[str]] = {
+    "argocd-out-of-sync": [
+        "Confirm the Application is OutOfSync in the Argo CD UI.",
+        "Run `argocd app diff <name>` to see the drift.",
+        "If the drift is benign (e.g. controller-managed annotations), add "
+        "it to the ignoreDifferences block in the Application.",
+        "If the drift is real, identify the actor via Cloud Audit Logs / "
+        "Kubernetes audit. Revoke access if it was unauthorised.",
+        "Run `argocd app sync <name>` to restore Git as the source of truth.",
+    ],
+    "node-pool-pressure": [
+        "Check `kubectl top nodes` for the affected pool.",
+        "If CPU/memory pressure, evict pods with low priority and let the "
+        "cluster autoscaler grow the pool.",
+        "If disk pressure, identify the noisy neighbour with "
+        "`kubectl describe node` events. Apply a PodDisruptionBudget cap.",
+        "For GPU pools specifically, check MIG slicing config. A GPU may be "
+        "fragmented across small workloads that block a larger request.",
+    ],
 }
 
-COMPLIANCE_CHECKS = {
+COMPLIANCE_CHECKS: dict[str, list[dict[str, str]]] = {
     "namespace": [
-        ("ResourceQuota present",      "kubectl get resourcequota -n <ns>"),
-        ("LimitRange present",         "kubectl get limitrange -n <ns>"),
-        ("NetworkPolicy default-deny", "kubectl get networkpolicy -n <ns>"),
-        ("RBAC scoped to tenant Group","kubectl get rolebindings -n <ns>"),
+        {"check": "ResourceQuota present", "verify": "kubectl get resourcequota -n <ns>"},
+        {"check": "LimitRange present", "verify": "kubectl get limitrange -n <ns>"},
+        {"check": "NetworkPolicy default-deny", "verify": "kubectl get networkpolicy -n <ns>"},
+        {"check": "RBAC scoped to tenant Group", "verify": "kubectl get rolebindings -n <ns>"},
     ],
     "image": [
-        ("Signed by trusted signer",    "cosign verify <image>"),
-        ("Scanned within last 7 days",  "Aqua / Harbor scan timestamp"),
-        ("No critical CVEs",            "Aqua / Harbor report"),
-        ("From approved registry",      "image prefix in allowlist"),
+        {"check": "Signed by trusted signer", "verify": "cosign verify <image>"},
+        {"check": "Scanned within last 7 days", "verify": "Aqua / Harbor scan timestamp"},
+        {"check": "No critical CVEs", "verify": "Aqua / Harbor report"},
+        {"check": "From approved registry", "verify": "image prefix in allowlist"},
     ],
 }
+
+
+# ---- Helpers ---------------------------------------------------------------
+
+def _audit(tool: str, **fields: object) -> str:
+    """Log a tool call and return the call id for downstream correlation."""
+    call_id = uuid.uuid4().hex[:8]
+    log.info("call=%s tool=%s %s", call_id, tool, fields)
+    return call_id
 
 
 # ---- MCP tools -------------------------------------------------------------
+
 @mcp.tool()
-def list_blueprints() -> str:
-    """List all platform blueprints available in this knowledge base."""
-    return json.dumps(
-        [{"name": name, "summary": data["summary"], "url": data["url"]}
-         for name, data in BLUEPRINTS.items()],
-        indent=2,
-    )
+def list_blueprints() -> list[dict[str, str]]:
+    """List all platform blueprints available in this knowledge base.
+
+    Returns a list of {name, summary, url} entries. Use describe_blueprint to
+    pull the full description for any one of them.
+    """
+    _audit("list_blueprints")
+    return [
+        {"name": name, "summary": str(data["summary"]), "url": str(data["url"])}
+        for name, data in BLUEPRINTS.items()
+    ]
 
 
 @mcp.tool()
-def describe_blueprint(name: str) -> str:
+def describe_blueprint(name: BlueprintName) -> dict[str, object]:
     """Return the full description for one named blueprint.
 
     Args:
         name: blueprint name. Use list_blueprints to discover available names.
     """
+    _audit("describe_blueprint", name=name)
     if name not in BLUEPRINTS:
-        return f"Unknown blueprint '{name}'. Available: {', '.join(BLUEPRINTS)}"
-    return json.dumps(BLUEPRINTS[name], indent=2)
+        raise ValueError(
+            f"Unknown blueprint '{name}'. Available: {', '.join(BLUEPRINTS)}"
+        )
+    return {"name": name, **BLUEPRINTS[name]}
 
 
 @mcp.tool()
-def describe_pattern(pattern: str) -> str:
+def describe_pattern(pattern: PatternName) -> dict[str, str]:
     """Explain a platform design pattern in plain prose.
 
     Args:
         pattern: one of workload-identity, policy-as-code,
                  multi-tenant-namespaces, gitops-fleet.
     """
+    _audit("describe_pattern", pattern=pattern)
     if pattern not in PATTERNS:
-        return f"Unknown pattern '{pattern}'. Available: {', '.join(PATTERNS)}"
-    return PATTERNS[pattern]
+        raise ValueError(
+            f"Unknown pattern '{pattern}'. Available: {', '.join(PATTERNS)}"
+        )
+    return {"pattern": pattern, "description": PATTERNS[pattern]}
 
 
 @mcp.tool()
-def get_runbook(scenario: str) -> str:
+def get_runbook(scenario: RunbookScenario) -> dict[str, object]:
     """Return the runbook steps for a common incident scenario.
 
     Args:
         scenario: short scenario name. Try argocd-out-of-sync or
                   node-pool-pressure.
     """
+    _audit("get_runbook", scenario=scenario)
     if scenario not in RUNBOOKS:
-        return f"No runbook for '{scenario}'. Available: {', '.join(RUNBOOKS)}"
-    return RUNBOOKS[scenario]
+        raise ValueError(
+            f"No runbook for '{scenario}'. Available: {', '.join(RUNBOOKS)}"
+        )
+    return {"scenario": scenario, "steps": RUNBOOKS[scenario]}
 
 
 @mcp.tool()
-def check_compliance(component: str) -> str:
+def check_compliance(component: ComponentName) -> dict[str, object]:
     """Return the compliance check matrix for a platform component.
 
     Args:
         component: one of namespace or image.
     """
+    _audit("check_compliance", component=component)
     if component not in COMPLIANCE_CHECKS:
-        return f"No compliance checks for '{component}'. Available: {', '.join(COMPLIANCE_CHECKS)}"
-    rows = COMPLIANCE_CHECKS[component]
-    return "\n".join(f"- {check}: {how_to_verify}" for check, how_to_verify in rows)
+        raise ValueError(
+            f"No compliance checks for '{component}'. "
+            f"Available: {', '.join(COMPLIANCE_CHECKS)}"
+        )
+    return {"component": component, "checks": COMPLIANCE_CHECKS[component]}
+
+
+def main() -> None:
+    """Entry point used by the `platform-mcp` console script."""
+    log.info("starting platform-mcp over stdio")
+    mcp.run()
 
 
 if __name__ == "__main__":
-    mcp.run()
+    main()
