@@ -6,6 +6,18 @@ authors = [{ name = "Sri Lingala" }]
 license = { text = "MIT" }
 readme = "README.md"
 requires-python = ">=3.10"
+keywords = ["mcp", "platform-engineering", "claude", "ai", "devops"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     # Pinned to 1.x — the MCP SDK has had breaking changes between majors,
     # bump intentionally and re-run the smoke tests when crossing the cap.
@@ -19,14 +31,19 @@ dev = [
 ]
 
 [project.scripts]
-platform-mcp = "server:main"
+platform-mcp = "platform_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/SriLingala/platform-mcp"
+Repository = "https://github.com/SriLingala/platform-mcp"
+Issues = "https://github.com/SriLingala/platform-mcp/issues"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-py-modules = ["server"]
+[tool.setuptools.packages.find]
+include = ["platform_mcp*"]
 
 [tool.ruff]
 line-length = 100

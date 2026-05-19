@@ -1,11 +1,15 @@
 # platform-mcp
 
+[![CI](https://github.com/SriLingala/platform-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/SriLingala/platform-mcp/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A Model Context Protocol (MCP) server that exposes platform engineering
 knowledge as tools Claude can call directly. Built on the official MCP Python
 SDK.
 
 The server demonstrates how a platform team can give AI assistants safe,
-audit-able, scoped access to internal knowledge: design patterns, runbooks,
+auditable, scoped access to internal knowledge: design patterns, runbooks,
 compliance checks and blueprint metadata.
 
 ## Why this exists
@@ -20,6 +24,16 @@ servers. The assistant only sees what the tool returns. The platform team
 controls what is exposed, how, and with what authorisation.
 
 This server is a working starting point for that pattern.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    client["Claude / MCP client"] --> transport["MCP over stdio"]
+    transport --> server["platform-mcp FastMCP server"]
+    server --> tools["Typed read-only tools"]
+    tools --> kb["Platform knowledge base"]
+```
 
 ## What it exposes
 
@@ -45,17 +59,33 @@ assistant might mistake for data.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
-platform-mcp                # or: python server.py
+platform-mcp                # or: python platform_mcp/server.py
 ```
 
 The server speaks MCP over stdio. Wire it into Claude Desktop / Claude Code by
-dropping the block from [docs/claude_desktop_config.json](docs/claude_desktop_config.json)
-into your client config (path varies by OS — see the
-[MCP quickstart](https://modelcontextprotocol.io/quickstart)). Use absolute
-paths.
+copying one of these examples into your client config:
+
+- [docs/claude_desktop_config.json](docs/claude_desktop_config.json) if you
+  installed the package with `pip install -e .`.
+- [docs/claude_desktop_config.python.json](docs/claude_desktop_config.python.json)
+  if you prefer to launch the Python script directly.
+
+The config path varies by OS; see the
+[MCP quickstart](https://modelcontextprotocol.io/quickstart). Use absolute
+paths in the `command` and `args` fields.
 
 Open the client. Ask "what platform blueprints are available?" The assistant
 will call `list_blueprints` and answer from the returned data.
+
+## Example prompts
+
+Try these after the server is connected:
+
+- "What platform blueprints are available?"
+- "Describe the AKS platform blueprint."
+- "Explain the workload identity pattern for a platform team."
+- "Give me the runbook for an Argo CD app that is out of sync."
+- "What compliance checks should I run for a container image?"
 
 ## Development
 
@@ -65,8 +95,17 @@ ruff check .
 pytest
 ```
 
-CI runs the same checks against Python 3.10 / 3.11 / 3.12 on every push and
-pull request — see [.github/workflows/ci.yml](.github/workflows/ci.yml).
+CI runs the same checks against Python 3.10 / 3.11 / 3.12 / 3.13 on every
+push and pull request; see
+[.github/workflows/ci.yml](.github/workflows/ci.yml).
+
+## Adding a new tool
+
+1. Add the backing data or provider function.
+2. Define a narrow `Literal[...]` input type when the allowed values are known.
+3. Decorate the function with `@mcp.tool()`.
+4. Call `_audit(...)` at the top of the tool function.
+5. Add tests for the successful response shape and invalid input path.
 
 ## Extending it
 
@@ -87,10 +126,9 @@ your platform requires.
 
 Three concrete wins worth calling out:
 
-1. **Audit-able AI assistance.** Every tool call is logged. You know exactly
+1. **Auditable AI assistance.** Every tool call is logged. You know exactly
    what context Claude saw and which platform engineer triggered it.
 2. **Permissioned access.** The MCP server runs as a known service identity.
    You can scope what it reads. Claude inherits only what the server allows.
 3. **Composable.** Multiple MCP servers per workflow. A "platform" server, a
    "git" server, an "incident" server. The assistant orchestrates them.
-

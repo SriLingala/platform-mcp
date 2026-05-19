@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "platform-mcp": {
+      "command": "/absolute/path/to/platform-mcp/.venv/bin/python",
+      "args": ["/absolute/path/to/platform-mcp/platform_mcp/server.py"]
+    }
+  }
+}

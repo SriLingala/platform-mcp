@@ -18,7 +18,7 @@ import asyncio
 
 import pytest
 
-import server
+from platform_mcp import server
 
 # ---- list_blueprints -------------------------------------------------------
 

@@ -18,7 +18,7 @@ the stdio JSON-RPC channel.
 
 Run:
     pip install -e .
-    platform-mcp                       # or: python server.py
+    platform-mcp                       # or: python platform_mcp/server.py
 
 Wire into Claude Desktop / Claude Code with the config block in
 docs/claude_desktop_config.json.
