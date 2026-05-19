@@ -94,15 +94,3 @@ Three concrete wins worth calling out:
 3. **Composable.** Multiple MCP servers per workflow. A "platform" server, a
    "git" server, an "incident" server. The assistant orchestrates them.
 
-## What this proves on a CV
-
-That the author has actually shipped an MCP server, not just talked about
-exploring the technology. A hiring manager looking at this repo can:
-
-1. Read `server.py` and see a working implementation of the MCP pattern.
-2. Run it locally in one command.
-3. Verify the design choices map to real platform engineering concerns.
-
-## Licence
-
-MIT.
